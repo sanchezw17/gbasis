@@ -102,7 +102,148 @@ def evaluate_density(one_density_matrix, basis, points, transform=None, threshol
         raise ValueError(f"Found negative density <= {-threshold}, got {min_output}.")
     return output.clip(min=0.0)
 
+def evaluate_dm_using_evaluated_orbs(one_density_matrix, orb_eval_list):
+    """Return the evaluation of the density matrix given the evaluated orbitals.
 
+    Parameters
+    ----------
+    one_density_matrix : np.ndarray(K_orb, K_orb)
+        One-electron density matrix in terms of the given orbitals.
+    orb_eval_list : list of orbitals evaluated on grid points [np.ndarray(K_orb, N) ...]
+        Orbitals evaluated at :math:`N` grid points.
+        The set of orbitals must be the same basis set used to build the one-electron density
+        matrix.
+
+    Returns
+    -------
+    density : np.ndarray(N1,N2,K_orb,K_orb)
+        Density Matrix evaluated at `N1,N2` grid points.
+
+    Raises
+    ------
+    TypeError
+        If `orb_eval` is not a 2-dimensional `numpy` array with `dtype` float.
+        If `one_density_matrix` is not a 2-dimensional `numpy` array with `dtype` float.
+    ValueError
+        If `one_density_matrix` is not square.
+        If the number of columns (or rows) of `one_density_matrix` is not equal to the number of
+        rows of the orbital evaluations.
+
+"""
+    #Tensor product for \gamma(\mathbf{r}_1,\mathbf{r}_2) = \sum_{pq} \gamma_{pq} \chi_p(\mathbf{r}_1) \chi_q(\mathbf{r}_2)
+    tensor_product = np.einsum('ij,ik,jl->klij',one_density_matrix, orb_eval_list[0],orb_eval_list[1])
+
+    return tensor_product
+
+
+def evaluate_dm_density(one_density_matrix, basis, points_list, transform=None):
+    r"""Return the density of the given basis set at the given points.
+
+    Parameters
+    ----------
+    one_density_matrix : np.ndarray(K_orbs, K_orbs)
+        One-electron density matrix in terms of the given basis set.
+        If the basis is transformed using `transform` keyword, then the density matrix is assumed to
+        be expressed with respect to the transformed basis set.
+    basis : list/tuple of GeneralizedContractionShell
+        Shells of generalized contractions.
+    points_list : list of points [np.ndarray(N, 3)...]
+        Cartesian coordinates of the points in space (in atomic units) where the basis functions
+        are evaluated.
+        Rows correspond to the points and columns correspond to the :math:`x, y, \text{and} z`
+        components.
+        This function can take a list of points at which basis functions are evaluated. If only one 
+        set of points is given, it will be duplicated.
+    transform : np.ndarray(K_orbs, K_cont)
+        Transformation matrix from the basis set in the given coordinate system (e.g. AO) to linear
+        combinations of contractions (e.g. MO).
+        Transformation is applied to the left, i.e. the sum is over the index 1 of `transform`
+        and index 0 of the array for contractions.
+        Default is no transformation.
+
+
+    Returns
+    -------
+    dm_on_grid : np.ndarray(N1,N2,K_orb,K_orb)
+        Density Matrix evaluated at `N1,N2` grid points.
+
+    """
+
+    orb_evals = []
+    #evaluate basi(e)s on the point set(s) 
+    for grid in points_list:
+        orb_eval = evaluate_basis(basis, grid, transform=transform)
+        orb_evals.append(orb_eval)
+    #if only one set of points is supplied, it is duplicated
+    if len(points_list)==1:
+        orb_evals.append(orb_eval)
+
+    #Calulated performed using the evaluated orbitals
+    dm_on_grid = evaluate_dm_using_evaluated_orbs(one_density_matrix, orb_evals)
+
+    return dm_on_grid
+    
+def evaluate_hole_x2(one_density_matrix, basis, points_list, transform=None):
+    r"""Return the two-body hole correlation function.
+
+    .. math ::
+
+        \left.
+        h(\mathbf{r}_1,\mathbf{r}_2) = 
+        \right.
+        -\frac{|\gamma(\mathbf{r}_1,\mathbf{r}_2)|^2}
+        {\rho({\mathbf{r}_1})\rho({\mathbf{r}_2})}
+
+    Parameters
+    ----------
+    one_density_matrix : np.ndarray(K_orbs, K_orbs)
+        One-electron density matrix in terms of the given basis set.
+        If the basis is transformed using `transform` keyword, then the density matrix is assumed to
+        be expressed with respect to the transformed basis set.
+    basis : list/tuple of GeneralizedContractionShell
+        Shells of generalized contractions.
+    points_list : list of points [np.ndarray(N, 3)]
+        Cartesian coordinates of the points in space (in atomic units) where the basis functions
+        are evaluated.
+        Rows correspond to the points and columns correspond to the :math:`x, y, \text{and} z`
+        components.
+        This function can take a list of points at which basis functions are evaluated. If only one 
+        set of points is given, it will be duplicated.
+    transform : np.ndarray(K_orbs, K_cont)
+        Transformation matrix from the basis set in the given coordinate system (e.g. AO) to linear
+        combinations of contractions (e.g. MO).
+        Transformation is applied to the left, i.e. the sum is over the index 1 of `transform`
+        and index 0 of the array for contractions.
+        Default is no transformation.
+
+
+    Returns
+    -------
+    hole_x2 : np.ndarray(N1,N2,K_orb,K_orb)
+        Two-body Exchange Hole evaluated at `N1,N2` grid points.
+
+    """
+    dens_evals = []
+
+    for grid in points_list:
+        print(basis)
+        print(grid)
+        dens_eval = evaluate_density(one_density_matrix,basis, grid, transform=transform)
+        print("eval",np.sum(dens_eval))
+        dens_evals.append(dens_eval)
+
+    if len(points_list)==1:
+        dens_evals.append(dens_eval)
+
+    dm_eval = evaluate_dm_density(one_density_matrix, basis, points_list, transform=transform)
+    numerator = np.einsum('ijkl,jikl->ijkl',dm_eval,dm_eval)
+    #print(numerator)
+    hole_x2 = -1*np.einsum('ijkl,i,j->ijkl',numerator,1/dens_evals[0],1/dens_evals[1])
+
+    result= hole_x2
+    return result
+
+    return hole_x2
 def evaluate_deriv_reduced_density_matrix(
     orders_one,
     orders_two,
