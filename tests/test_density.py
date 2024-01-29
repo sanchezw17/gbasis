@@ -85,19 +85,25 @@ def test_evaluate_density(screen_basis, tol_screen):
         dens, np.einsum("ij,ik,jk->k", density, evaluate_orbs, evaluate_orbs), atol=tol_screen
     )
 
+
 def test_evaluate_dm_using_evaluated_orbs():
     """Test gbasis.evals.density.evaluate_density_using_evaluated_orbs."""
     density_mat = np.array([[1.0, 2.0], [2.0, 3.0]])
     orb_eval = np.array([[1.0], [2.0]])
-    dens = evaluate_dm_using_evaluated_orbs(density_mat, [orb_eval,orb_eval])
+    dens = evaluate_dm_using_evaluated_orbs(density_mat, [orb_eval, orb_eval])
     assert np.all(dens >= 0.0)
-    assert np.allclose(np.einsum('iikl->i',dens), np.einsum("ij,ik,jk->k", density_mat, orb_eval, orb_eval))
+    assert np.allclose(
+        np.einsum("iikl->i", dens), np.einsum("ij,ik,jk->k", density_mat, orb_eval, orb_eval)
+    )
 
     density_mat = np.array([[1.0, 2.0], [2.0, 3.0]])
     orb_eval = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
-    dens = evaluate_dm_using_evaluated_orbs(density_mat, [orb_eval,orb_eval])
+    dens = evaluate_dm_using_evaluated_orbs(density_mat, [orb_eval, orb_eval])
     assert np.all(dens >= 0)
-    assert np.allclose(np.einsum('iikl->i',dens), np.einsum("ij,ik,jk->k", density_mat, orb_eval, orb_eval))
+    assert np.allclose(
+        np.einsum("iikl->i", dens), np.einsum("ij,ik,jk->k", density_mat, orb_eval, orb_eval)
+    )
+
 
 def test_evaluate_dm_density():
     """Test gbasis.evals.density.evaluate_density."""
@@ -110,7 +116,9 @@ def test_evaluate_dm_density():
 
     evaluate_orbs = evaluate_basis(basis, points, transform)
     dens = evaluate_dm_density(density, basis, [points], transform)
-    assert np.allclose(np.einsum('iikl->i',dens), np.einsum("ij,ik,jk->k", density, evaluate_orbs, evaluate_orbs))
+    assert np.allclose(
+        np.einsum("iikl->i", dens), np.einsum("ij,ik,jk->k", density, evaluate_orbs, evaluate_orbs)
+    )
 
 
 def test_evaluate_hole_x2():
@@ -121,10 +129,12 @@ def test_evaluate_hole_x2():
 
     points = np.random.rand(10, 3)
 
-    eh = evaluate_hole_x2(density, basis, points_list=[points,points],transform=transform)
-    ed = evaluate_density(density,basis,points,transform=transform)
+    eh = evaluate_hole_x2(density, basis, points_list=[points, points], transform=transform)
+    ed = evaluate_density(density, basis, points, transform=transform)
 
-    assert np.allclose(np.einsum('ijkl,j->',eh,ed)/np.sum(ed)/len(points)*len(transform), -1)
+    assert np.allclose(
+        np.einsum("ijkl,j->", eh, ed) / np.sum(ed) / len(points) * len(transform), -1
+    )
 
 
 @pytest.mark.parametrize("screen_basis", [True, False])
@@ -645,5 +655,6 @@ def test_evaluate_general_kinetic_energy_density(screen_basis, tol_screen, deriv
         ),
         atol=tol_screen,
     )
+
 
 test_evaluate_hole_x2()
