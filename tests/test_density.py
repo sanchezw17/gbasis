@@ -2,6 +2,8 @@
 
 from gbasis.evals.density import (
     evaluate_density,
+    evaluate_dm_using_evaluated_orbs,
+    evaluate_dm_density,
     evaluate_density_gradient,
     evaluate_density_hessian,
     evaluate_density_laplacian,
@@ -82,6 +84,32 @@ def test_evaluate_density(screen_basis, tol_screen):
         dens, np.einsum("ij,ik,jk->k", density, evaluate_orbs, evaluate_orbs), atol=tol_screen
     )
 
+def test_evaluate_dm_using_evaluated_orbs():
+    """Test gbasis.evals.density.evaluate_density_using_evaluated_orbs."""
+    density_mat = np.array([[1.0, 2.0], [2.0, 3.0]])
+    orb_eval = np.array([[1.0], [2.0]])
+    dens = evaluate_dm_using_evaluated_orbs(density_mat, [orb_eval,orb_eval])
+    assert np.all(dens >= 0.0)
+    assert np.allclose(np.einsum('iikl->i',dens), np.einsum("ij,ik,jk->k", density_mat, orb_eval, orb_eval))
+
+    density_mat = np.array([[1.0, 2.0], [2.0, 3.0]])
+    orb_eval = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    dens = evaluate_dm_using_evaluated_orbs(density_mat, [orb_eval,orb_eval])
+    assert np.all(dens >= 0)
+    assert np.allclose(np.einsum('iikl->i',dens), np.einsum("ij,ik,jk->k", density_mat, orb_eval, orb_eval))
+
+def test_evaluate_dm_density():
+    """Test gbasis.evals.density.evaluate_density."""
+    basis_dict = parse_nwchem(find_datafile("data_sto6g.nwchem"))
+    basis = make_contractions(basis_dict, ["Kr"], np.array([[0, 0, 0]]), "spherical")
+    transform = np.random.rand(14, 18)
+    density = np.random.rand(14, 14)
+    density += density.T
+    points = np.random.rand(100, 3)
+
+    evaluate_orbs = evaluate_basis(basis, points, transform)
+    dens = evaluate_dm_density(density, basis, [points], transform)
+    assert np.allclose(np.einsum('iikl->i',dens), np.einsum("ij,ik,jk->k", density, evaluate_orbs, evaluate_orbs))
 
 @pytest.mark.parametrize("screen_basis", [True, False])
 @pytest.mark.parametrize("tol_screen", [1e-8])
@@ -601,3 +629,4 @@ def test_evaluate_general_kinetic_energy_density(screen_basis, tol_screen, deriv
         ),
         atol=tol_screen,
     )
+
