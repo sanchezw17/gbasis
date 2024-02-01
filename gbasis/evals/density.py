@@ -128,8 +128,7 @@ def evaluate_density(
         raise ValueError(f"Found negative density <= {-threshold}, got {min_density}.")
     return output.clip(min=0.0)
 
-
-def evaluate_dm_using_evaluated_orbs(one_density_matrix, orb_eval_1, orb_eval_2):
+def evaluate_rdm_using_evaluated_orbs(one_rdm, orb_eval_1,orb_eval_2):
     """Return the evaluation of the density matrix given the evaluated orbitals.
 
     Parameters
@@ -158,9 +157,9 @@ def evaluate_dm_using_evaluated_orbs(one_density_matrix, orb_eval_1, orb_eval_2)
 
     """
     if not (
-        isinstance(one_density_matrix, np.ndarray)
-        and one_density_matrix.ndim == 2
-        and one_density_matrix.dtype == float
+        isinstance(one_rdm, np.ndarray)
+        and one_rdm.ndim == 2
+        and one_rdm.dtype == float
     ):
         raise TypeError(
             "One-electron density matrix must be a two-dimensional `numpy` array with `dtype`"
@@ -179,23 +178,23 @@ def evaluate_dm_using_evaluated_orbs(one_density_matrix, orb_eval_1, orb_eval_2)
         raise TypeError(
             "Evaluation of orbitals must be a two-dimensional `numpy` array with `dtype` float."
         )
-    if one_density_matrix.shape[0] != one_density_matrix.shape[1]:
+    if one_rdm.shape[0] != one_rdm.shape[1]:
         raise ValueError("One-electron density matrix must be a square matrix.")
 
-    if not np.allclose(one_density_matrix, one_density_matrix.T):
+    if not np.allclose(one_rdm, one_rdm.T):
         raise ValueError("One-electron density matrix must be symmetric.")
 
-    # Evaluation of \gamma(\mathbf{r}_1,\mathbf{r}_2) = \sum_{pq} \gamma_{pq} \chi_p(\mathbf{r}_1) \chi_q(\mathbf{r}_2)
-    dm_on_grid = 0
-    for ii, orb1 in enumerate(one_density_matrix):
-        for jj, orb2 in enumerate(one_density_matrix):
-            dm_on_grid += one_density_matrix[ii][jj] * np.outer(orb_eval_1[ii], orb_eval_2[jj])
+    #Evaluation of \gamma(\mathbf{r}_1,\mathbf{r}_2) = \sum_{pq} \gamma_{pq} \chi_p(\mathbf{r}_1) \chi_q(\mathbf{r}_2)
+    rdm_on_grid=0
+    for ii, orb1 in enumerate(one_rdm):
+        for jj, orb2 in enumerate(one_rdm):
+            rdm_on_grid += one_rdm[ii][jj]* np.outer(orb_eval_1[ii],orb_eval_2[jj])
 
-    # returns dm evaluated on each grid point summed over the orbitals
-    return dm_on_grid
+    #returns dm evaluated on each grid point summed over the orbitals
+    return rdm_on_grid
 
 
-def evaluate_dm_density(one_density_matrix, basis, point1, point2=None, transform=None):
+def evaluate_rdm_density(one_rdm, basis, point1, point2 = np.array(None), transform=None):
     r"""Return the density matrix of the given basis set evaluated on the given points.
 
     Parameters
@@ -242,16 +241,18 @@ def evaluate_dm_density(one_density_matrix, basis, point1, point2=None, transfor
     if point2 is None:
         orb_eval_2 = orb_eval_1
     else:
-        orb_eval_2 = evaluate_basis(basis, point2, transform=transform)
+        orb_eval_2 = evaluate_basis(basis, point2, transform=transform) 
+    
+    #Calulated performed using the evaluated orbitals
+    rdm_on_grid = evaluate_rdm_using_evaluated_orbs(one_rdm, orb_eval_1,orb_eval_2)
+    return rdm_on_grid
 
-    # Calulated performed using the evaluated orbitals
-    dm_on_grid = evaluate_dm_using_evaluated_orbs(one_density_matrix, orb_eval_1, orb_eval_2)
-
-    return dm_on_grid
 
 
-def evaluate_hole_x2(one_density_matrix, basis, point1, point2=None, transform=None):
-    r"""Return the two-body exchange hole correlation function.
+
+
+def evaluate_hole_x2(one_rdm, basis, point1, point2=np.array(None), transform=None):
+    r"""Return the two-body hole correlation function.
 
     .. math ::
 
@@ -298,19 +299,23 @@ def evaluate_hole_x2(one_density_matrix, basis, point1, point2=None, transform=N
 
     """
 
-    dens_eval_1 = evaluate_density(one_density_matrix, basis, point1, transform=transform)
+    dens_eval_1 = evaluate_density(one_rdm,basis, point1, transform=transform)
+
+    #if only one set of points is supplied, density evaluation is duplicated
+
+    dens_eval_1 = evaluate_density(one_rdm,basis, point1, transform=transform)
 
     # if only one set of points is supplied, density evaluation is duplicated
     if point2 is None:
         dens_eval_2 = dens_eval_1
     else:
-        dens_eval_2 = evaluate_density(one_density_matrix, basis, point2, transform=transform)
+        dens_eval_2 = evaluate_density(one_rdm,basis, point2, transform=transform) 
 
-    # build density matrix on grid
-    dm_eval = evaluate_dm_density(one_density_matrix, basis, point1, point2, transform=transform)
+    #build density matrix on grid
+    rdm_eval = evaluate_rdm_density(one_rdm, basis, point1, point2, transform=transform)
 
-    # evaluate hole function
-    numerator = dm_eval * dm_eval
+    #evaluate hole function
+    numerator = rdm_eval*rdm_eval
 
     hole_x2 = -1*np.einsum('ij,i,j->ij',numerator,1/dens_eval_1,1/dens_eval_2)
 
