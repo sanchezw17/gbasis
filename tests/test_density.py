@@ -682,9 +682,4 @@ def test_evaluate_general_kinetic_energy_density(screen_basis, tol_screen, deriv
         ),
         atol=tol_screen,
     )
-<<<<<<< HEAD
 
-
-test_evaluate_hole_x2()
-=======
->>>>>>> 59c34a5 (code changes+update functions)

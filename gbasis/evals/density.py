@@ -118,20 +118,15 @@ def evaluate_density(
         Density evaluated at `N` grid points.
 
     """
-<<<<<<< HEAD
     orb_eval = evaluate_basis(
         basis, points, transform=transform, screen_basis=screen_basis, tol_screen=tol_screen
     )
     output = evaluate_density_using_evaluated_orbs(one_density_matrix, orb_eval)
-=======
-    orb_eval = evaluate_basis(basis, points, transform=transform)
-    density = evaluate_density_using_evaluated_orbs(one_density_matrix, orb_eval)
->>>>>>> 21cb294 (fixed various instances of docustring var_names not matching var_names in return statements in density.py)
     # Fix #117: check magnitude of small negative density values, then use clip to remove them
-    min_density = np.min(density)
+    min_density = np.min(output)
     if min_density < 0.0 and abs(min_density) > threshold:
         raise ValueError(f"Found negative density <= {-threshold}, got {min_density}.")
-    return density.clip(min=0.0)
+    return output.clip(min=0.0)
 
 def evaluate_dm_using_evaluated_orbs(one_density_matrix, orb_eval_1,orb_eval_2):
     """Return the evaluation of the density matrix given the evaluated orbitals.
@@ -416,18 +411,11 @@ def evaluate_deriv_reduced_density_matrix(
             screen_basis=screen_basis,
             tol_screen=tol_screen,
         )
-<<<<<<< HEAD
     # density = one_density_matrix.dot(deriv_orb_eval_two)
     # density *= deriv_orb_eval_one
     # density = np.sum(density, axis=0)
     # return density
     return np.einsum("ij,jk,ik->k", one_density_matrix, deriv_orb_eval_two, deriv_orb_eval_one)
-=======
-    density = one_density_matrix.dot(deriv_orb_eval_two)
-    density *= deriv_orb_eval_one
-    deriv_reduced_density_matrix = np.sum(density, axis=0)
-    return deriv_reduced_density_matrix
->>>>>>> 21cb294 (fixed various instances of docustring var_names not matching var_names in return statements in density.py)
 
 
 def evaluate_deriv_density(
