@@ -1,6 +1,89 @@
 """Module for interfacing to other quantum chemistry packages."""
-from gbasis.contractions import GeneralizedContractionShell
+
 import numpy as np
+
+from gbasis.contractions import GeneralizedContractionShell
+
+CONVENTIONS_LIBCINT = {
+    (5, "p"): ["s5", "s4", "s3", "s2", "s1", "c0", "c1", "c2", "c3", "c4", "c5"],
+    (4, "p"): ["s4", "s3", "s2", "s1", "c0", "c1", "c2", "c3", "c4"],
+    (3, "p"): ["s3", "s2", "s1", "c0", "c1", "c2", "c3"],
+    (2, "p"): ["s2", "s1", "c0", "c1", "c2"],
+    (0, "c"): ["1"],
+    (1, "c"): ["x", "y", "z"],
+    (2, "c"): ["xx", "xy", "xz", "yy", "yz", "zz"],
+    (3, "c"): ["xxx", "xxy", "xxz", "xyy", "xyz", "xzz", "yyy", "yyz", "yzz", "zzz"],
+    (4, "c"): [
+        "xxxx",
+        "xxxy",
+        "xxxz",
+        "xxyy",
+        "xxyz",
+        "xxzz",
+        "xyyy",
+        "xyyz",
+        "xyzz",
+        "xzzz",
+        "yyyy",
+        "yyyz",
+        "yyzz",
+        "yzzz",
+        "zzzz",
+    ],
+    (5, "c"): [
+        "xxxxx",
+        "xxxxy",
+        "xxxxz",
+        "xxxyy",
+        "xxxyz",
+        "xxxzz",
+        "xxyyy",
+        "xxyyz",
+        "xxyzz",
+        "xxzzz",
+        "xyyyy",
+        "xyyyz",
+        "xyyzz",
+        "xyzzz",
+        "xzzzz",
+        "yyyyy",
+        "yyyyz",
+        "yyyzz",
+        "yyzzz",
+        "yzzzz",
+        "zzzzz",
+    ],
+    (6, "c"): [
+        "xxxxxx",
+        "xxxxxy",
+        "xxxxxz",
+        "xxxxyy",
+        "xxxxyz",
+        "xxxxzz",
+        "xxxyyy",
+        "xxxyyz",
+        "xxxyzz",
+        "xxxzzz",
+        "xxyyyy",
+        "xxyyyz",
+        "xxyyzz",
+        "xxyzzz",
+        "xxzzzz",
+        "xyyyyy",
+        "xyyyyz",
+        "xyyyzz",
+        "xyyzzz",
+        "xyzzzz",
+        "xzzzzz",
+        "yyyyyy",
+        "yyyyyz",
+        "yyyyzz",
+        "yyyzzz",
+        "yyzzzz",
+        "yzzzzz",
+        "zzzzzz",
+    ],
+}
 
 
 def from_iodata(mol):
@@ -40,7 +123,9 @@ def from_iodata(mol):
         raise ValueError("`mol` must be an IOData instance.")
 
     # GBasis can only work with segmented basis sets.
-    molbasis = mol.obasis.get_segmented()
+    from iodata.convert import convert_to_segmented
+
+    molbasis = convert_to_segmented(mol.obasis)
 
     cart_conventions = {i[0]: j for i, j in molbasis.conventions.items() if i[1] == "c"}
     sph_conventions = {i[0]: j for i, j in molbasis.conventions.items() if i[1] == "p"}
@@ -104,15 +189,48 @@ def from_iodata(mol):
             if self.angmom not in sph_conventions:
                 raise ValueError(
                     "Given convention does not support spherical contractions for the angular "
-                    "momentum {0}".format(self.angmom)
+                    f"momentum {self.angmom}"
                 )
 
             return tuple(sph_conventions[self.angmom])
 
+        def permutation_libcint(self):
+            """Returns the permutation of the stored convention to the one used in libcint for
+            the given angular momentum
+
+            Conventions supported
+            cartesian: string of X, Y, and Z characters,such that :math:`a_x` `X` characters,
+            :math:`a_y` `Y` characters, and :math:`a_z` `Z`, characters appear. F
+            For example, `(2, 1, 1)` corresponds to `XXYZ`
+
+            Spherical: Strings of the form `c{m}` and `s{m}`.
+
+            Rerturns:
+            --------
+            permutation: An integer array that permutes basis function from IOData stored convention
+                         to LibCint.
+
+            """
+
+            angmom = self.angmom
+            if self.coord_type == "cartesian":
+                coord_type = "c"
+                iodata_shell_convention = cart_conventions[angmom]
+            elif self.coord_type == "spherical":
+                coord_type = "p"
+                iodata_shell_convention = sph_conventions[angmom]
+
+            # Get libcint convention
+            libcint_convention = CONVENTIONS_LIBCINT[(angmom, coord_type)]
+            # Generate permutation
+            permutation = [libcint_convention.index(conv1) for conv1 in iodata_shell_convention]
+
+            return permutation
+
     if molbasis.primitive_normalization != "L2":  # pragma: no cover
         raise ValueError(
             "Only L2 normalization scheme is supported in `gbasis`. Given `IOData` instance uses "
-            "primitive normalization scheme, {}".format(molbasis.primitive_normalization)
+            f"primitive normalization scheme, {molbasis.primitive_normalization}"
         )
 
     basis = []

@@ -1,4 +1,5 @@
 """Data class for contractions of Gaussian-type primitives."""
+
 from numbers import Integral
 import numpy as np
 from gbasis.utils import factorial2
@@ -16,27 +17,27 @@ class GeneralizedContractionShell:
 
     .. math::
 
-        g_i (\mathbf{r} | \vec{a}, \vec{R}_A) =
-        N_g (\alpha, \vec{a})
+        g_i (\mathbf{r} | \mathbf{R}_A, \mathbf{a}) =
+        N_g (\alpha, \mathbf{a})
         (x - X_A)^{a_x} (y - Y_A)^{a_y} (z - Z_A)^{a_z}
-        \exp{-\alpha_i |\vec{r} - \vec{R}_A|^2}
+        \exp{-\alpha_i |\mathbf{r} - \mathbf{R}_A|^2}
 
-    where :math:`\vec{a} = (a_x, a_y, az)` is the angular momentum components in Cartesian
-    coordinates, :math:`\vec{R}_A` is the coordinate of the center :math:`A`, :math:`N_g` is the
+    where :math:`\mathbf{a} = (a_x, a_y, az)` is the angular momentum components in Cartesian
+    coordinates, :math:`\mathbf{R}_A` is the coordinate of the center :math:`A`, :math:`N_g` is the
     normalization constant of the primitive, and :math:`\alpha_i` is the exponent of the primitive.
 
     A **Cartesian contraction** is a linear combination of Cartesian primitives:
 
     .. math::
 
-        \phi_{\vec{a}, \vec{R}_A} (\mathbf{r}) =
-        N_{\phi} (\vec{a}, \vec{R}_A) \sum_i d_i g_i (\vec{r} | \vec{a}, \vec{R}_A)
+        \phi (\mathbf{r} | \mathbf{R}_A, \mathbf{a}, \mathbf{d}, \boldsymbol{\alpha}) =
+        N_{\phi} (\mathbf{R}_A, \mathbf{a}, \mathbf{d}, \boldsymbol{\alpha}) \sum_i d_i g_i (\mathbf{r} | \mathbf{R}_A, \mathbf{a})
 
     where :math:`d_i` is the contraction coefficient of the primitive and :math:`N_{\phi}` is the
     normalization constant of the contraction.
 
     Note that the Cartesian contraction depends on the angular momentum components in the Cartesian
-    coordinate, :math:`\vec{a}`. At a given angular momentum, :math:`\ell`, we have
+    coordinate, :math:`\mathbf{a}`. At a given angular momentum, :math:`\ell`, we have
     :math:`\frac{(\ell + 1) (\ell + 2)}{2}` different components. We can linearly transform these
     contractions to obtain the :math:`2 \ell + 1` **spherical contractions**. Since we can convert
     the contractions in one coordinate system to another, we use the term **contraction** to
@@ -61,8 +62,8 @@ class GeneralizedContractionShell:
 
     .. math::
 
-        \phi_{j, \vec{a}, \vec{R}_A} (\mathbf{r}) =
-        N_{\phi} (\vec{a}, \vec{R}_A) \sum_i d_{ij} g_i (\vec{r} | \vec{a}, \vec{R}_A)
+        \phi_j (\mathbf{r} | \mathbf{R}_A, \mathbf{a}, \mathbf{d}, \boldsymbol{\alpha}) =
+        N_{\phi} (\mathbf{R}_A, \mathbf{a}, \mathbf{d}, \boldsymbol{\alpha}) \sum_i d_{ij} g_i (\mathbf{r} | \mathbf{R}_A, \mathbf{a})
 
     Attributes
     ----------
@@ -72,11 +73,11 @@ class GeneralizedContractionShell:
         Angular momentum of the contractions.
 
         .. math::
-            \ell = \sum_i (\vec{a})_i = a_x + a_y + a_z
+            \ell = \sum_i (\mathbf{a})_i = a_x + a_y + a_z
 
     angmom_components_cart : np.ndarray(L, 3)
         The x, y, and z components of the angular momentum vectors
-        (:math:`\vec{a} = (a_x, a_y, a_z)` where :math:`a_x + a_y + a_z = \ell`).
+        (:math:`\mathbf{a} = (a_x, a_y, a_z)` where :math:`a_x + a_y + a_z = \ell`).
         `L` is the number of Cartesian contracted Gaussian functions for the given angular
         momentum, i.e. :math:`(\ell + 1) * (\ell + 2) / 2`.
         Property of `GeneralizedContractionShell`.
@@ -114,9 +115,7 @@ class GeneralizedContractionShell:
 
     """
 
-    def __init__(
-        self, angmom, coord, coeffs, exps, coord_type, icenter=None, tol=1e-15, ovr_screen=False
-    ):
+    def __init__(self, angmom, coord, coeffs, exps, coord_type, icenter=None):
         r"""Initialize a GeneralizedContractionShell instance.
 
         Parameters
@@ -124,7 +123,7 @@ class GeneralizedContractionShell:
         angmom : int
             Angular momentum of the set of contractions.
 
-            :math:`\sum_i \vec{a} = a_x + a_y + a_z`
+            :math:`\sum_i \mathbf{a} = a_x + a_y + a_z`
 
         coord : np.ndarray(3,)
             Coordinate of the center of the contractions.
@@ -141,17 +140,11 @@ class GeneralizedContractionShell:
             "spherical" or "p".
         icenter : np.int64 or None (optional)
             Index for the atomic center for the contraction
-        ovr_tol : float
-            Tolerance used in overlap screening.
-        ovr_screen : boolean
-            Flag used for activating overlap screening.
         """
         self.angmom = angmom
         self.coord = coord
         self.coeffs = coeffs
         self.exps = exps
-        self.ovr_tol = tol
-        self.ovr_screen = ovr_screen
         self.assign_norm_cont()
         self.coord_type = coord_type
         self.icenter = icenter
@@ -236,7 +229,7 @@ class GeneralizedContractionShell:
         angmom : int
             Angular momentum of the set of contractions.
 
-            :math:`\sum_i (\vec{a})_i = a_x + a_y + a_z`
+            :math:`\sum_i (\mathbf{a})_i = a_x + a_y + a_z`
 
         """
         return self._angmom
@@ -250,7 +243,7 @@ class GeneralizedContractionShell:
         angmom : int
             Angular momentum of the set of contractions.
 
-            :math:`\sum_i (\vec{a})_i = a_x + a_y + a_z`
+            :math:`\sum_i (\mathbf{a})_i = a_x + a_y + a_z`
 
         Raises
         ------
@@ -365,70 +358,6 @@ class GeneralizedContractionShell:
             self._coeffs = coeffs
 
     @property
-    def ovr_screen(self):
-        """Flag for performing overlap screening.
-
-        Returns
-        -------
-        ovr_screen : bool
-            Flag for using overlap screening.
-
-        """
-        return self._ovr_screen
-
-    @ovr_screen.setter
-    def ovr_screen(self, ovr_screen):
-        """Flag for performing overlap screening.
-
-        Parameters
-        ----------
-        ovr_screen : bool
-            Flag for using overlap screening.
-
-        Raises
-        ------
-        TypeError
-            If `ovr_screen` is not a `bool`.
-
-        """
-        if not isinstance(ovr_screen, bool):
-            raise TypeError("The overlap screening flag must be True or False.")
-
-        self._ovr_screen = ovr_screen
-
-    @property
-    def ovr_tol(self):
-        """Tolerance used in overlap screening.
-
-        Returns
-        -------
-        ovr_stol : float
-            Tolerance for using overlap screening
-
-        """
-        return self._ovr_tol
-
-    @ovr_tol.setter
-    def ovr_tol(self, ovr_tol):
-        """Tolerance used in overlap screening.
-
-        Parameters
-        ----------
-        ovr_stol : float
-            Tolerance for using overlap screening.
-
-        Raises
-        ------
-        TypeError
-            If `ovr_tol` is not a `float`.
-
-        """
-        if not isinstance(ovr_tol, float):
-            raise TypeError("The overlap screening tolerance must be float.")
-
-        self._ovr_tol = ovr_tol
-
-    @property
     def angmom_components_cart(self):
         r"""Return the components of the angular momentum vectors for the given angular momentum.
 
@@ -436,7 +365,7 @@ class GeneralizedContractionShell:
         -------
         angmom_components_cart : np.ndarray(L, 3)
             The x, y, and z components of the angular momentum vectors
-            (:math:`\vec{a} = (a_x, a_y, a_z)` where :math:`a_x + a_y + a_z = \ell`).
+            (:math:`\mathbf{a} = (a_x, a_y, a_z)` where :math:`a_x + a_y + a_z = \ell`).
             `L` is the number of Cartesian contracted Gaussian functions for the given
             angular momentum, i.e. :math:`(\ell + 1) * (\ell + 2) / 2`
 
@@ -463,10 +392,9 @@ class GeneralizedContractionShell:
         We define spherical components as regular solid harmonics :math:`R_{\ell, m}` such that
 
         .. math::
-            \begin{align}
-                R_{\ell, m} &= C_{\ell, m}, \quad &m = 0 ... \ell
-                R_{\ell, -m} &= S_{\ell, m}, \quad &m = 1 ... \ell
-            \end{align}
+
+                R_{\ell, m} = C_{\ell, m}, \quad m = 0 ... \ell\\
+                R_{\ell, -m} = S_{\ell, m}, \quad m = 1 ... \ell
 
         where :math:`C_{\ell, m}` and :math:`S_{\ell, m}` are Cosine- and Sine-like real
         regular solid harmonics (respectively).
@@ -495,10 +423,13 @@ class GeneralizedContractionShell:
         ['s2', 's1', 'c0', 'c1', 'c2'].
 
         """
-        return tuple(
-            ["s{}".format(m) for m in range(self.angmom, 0, -1)]
-            + ["c{}".format(m) for m in range(self.angmom + 1)]
-        )
+        if self.angmom == 1:
+            return tuple(["c1", "s1", "c0"])
+        else:
+            return tuple(
+                ["s{}".format(m) for m in range(self.angmom, 0, -1)]
+                + ["c{}".format(m) for m in range(self.angmom + 1)]
+            )
 
     @property
     def norm_prim_cart(self):
@@ -507,7 +438,7 @@ class GeneralizedContractionShell:
         For a Cartesian primitive with exponent :math:`\alpha_i`, the normalization constant is:
 
         .. math::
-           N(\alpha_i, \vec{a}) = \sqrt {
+           N(\alpha_i, \mathbf{a}) = \sqrt {
            \left(\frac{2\alpha_i}{\pi}\right)^\frac{3}{2}
            \frac{(4\alpha_i)^{a_x + a_y + a_z}}{(2a_x - 1)!! (2a_y - 1)!! (2a_z - 1)!!}}
 

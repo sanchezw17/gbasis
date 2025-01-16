@@ -458,6 +458,17 @@ class CBasis:
         offs = np.asarray(offs, dtype=c_int)
         atm_offs = np.cumsum(atm_offs)
 
+        # Get permutation vector for ordering convention
+        permutations = []
+        for shell in basis:
+            if hasattr(shell, "permutation_libcint"):
+                permutation = shell.permutation_libcint()
+            else:
+                permutation = list(range(num_angmom(shell)))
+            for _ in range(shell.num_seg_cont):
+                perm_off = len(permutations)
+                permutations.extend(p + perm_off for p in permutation)
+
         # Allocate and fill C input arrays
         ienv = 20
         atm = np.zeros((natm, 6), dtype=c_int)
@@ -536,9 +547,10 @@ class CBasis:
         self.atcoords = atcoords.copy()
         self._atm_offs = atm_offs
 
-        # Save basis function offsets
+        # Save basis function offsets and ordering permutation
         self._offs = offs
         self._max_off = max(offs)
+        self._permutations = permutations
 
         # Set inverse sqrt of overlap integral (temporarily, for __init__)
         self._ovlp_minhalf = np.ones(nbfn)
@@ -658,7 +670,7 @@ class CBasis:
         )
 
         # Make instance-bound integral method
-        def int1e(notation="physicist", origin=None, inv_origin=None):
+        def int1e(notation="physicist", transform=None, origin=None, inv_origin=None):
             # Handle ``notation`` argument
             if notation not in ("physicist", "chemist"):
                 raise ValueError("``notation`` must be one of 'physicist' or 'chemist'")
@@ -730,7 +742,7 @@ class CBasis:
 
             # Cast `out` to complex if `is_complex` is set
             if is_complex:
-                out = out.reshape(*out.shape[:-2], -1).view(np.complex_)
+                out = out.reshape(*out.shape[:-2], -1).view(np.complex128)
 
             # Remove useless axis in `out` if no `components` was given
             if no_comp:
@@ -740,11 +752,20 @@ class CBasis:
             if constant is not None:
                 out *= constant
 
-            # Return normalized integrals
+            # Apply permutation
+            out = out[self._permutations, :][:, self._permutations]
+
+            # Normalize integrals
             if self.coord_type == "cartesian":
-                return np.einsum(norm_einsum, self._ovlp_minhalf, self._ovlp_minhalf, out)
-            else:
-                return out
+                out = np.einsum(norm_einsum, self._ovlp_minhalf, self._ovlp_minhalf, out)
+
+            # Apply transformation
+            if transform is not None:
+                out = np.tensordot(transform, out, (1, 0))
+                out = np.tensordot(transform, out, (1, 1))
+                out = np.swapaxes(out, 0, 1)
+
+            return out
 
         # Return instance-bound integral method
         return int1e
@@ -808,7 +829,7 @@ class CBasis:
         )
 
         # Make instance-bound integral method
-        def int2e(notation="physicist", origin=None, inv_origin=None):
+        def int2e(notation="physicist", transform=None, origin=None, inv_origin=None):
             # Handle ``notation`` argument
             if notation == "physicist":
                 physicist = True
@@ -927,7 +948,7 @@ class CBasis:
 
             # Cast `out` to complex if `is_complex` is set
             if is_complex:
-                out = out.reshape(*out.shape[:-2], out.shape[-2] * 2).view(np.complex_)
+                out = out.reshape(*out.shape[:-2], out.shape[-2] * 2).view(np.complex128)
 
             # Remove useless axis in `out` if no `components` was given
             if no_comp:
@@ -937,13 +958,15 @@ class CBasis:
             if constant is not None:
                 out *= constant
 
-            # Transpose integrals in `out` array to proper notation
-            if physicist:
-                out = out.transpose(0, 2, 1, 3)
+            # Apply permutation
+            out = out[self._permutations]
+            out = out[:, self._permutations]
+            out = out[:, :, self._permutations]
+            out = out[:, :, :, self._permutations]
 
-            # Return normalized integrals
+            # Normalize integrals
             if self.coord_type == "cartesian":
-                return np.einsum(
+                out = np.einsum(
                     norm_einsum,
                     self._ovlp_minhalf,
                     self._ovlp_minhalf,
@@ -951,51 +974,107 @@ class CBasis:
                     self._ovlp_minhalf,
                     out,
                 )
-            else:
-                return out
+
+            # Transpose integrals in `out` array to proper notation
+            if physicist:
+                out = out.transpose(0, 2, 1, 3)
+
+            # Apply transformation
+            if transform is not None:
+                out = np.tensordot(transform, out, (1, 0))
+                out = np.tensordot(transform, out, (1, 1))
+                out = np.tensordot(transform, out, (1, 2))
+                out = np.tensordot(transform, out, (1, 3))
+                out = np.swapaxes(np.swapaxes(out, 0, 3), 1, 2)
+
+            return out
 
         # Return instance-bound integral method
         return int2e
 
-    def overlap(self):
+    def overlap_integral(self, notation="physicist", transform=None):
         r"""
         Compute the overlap integrals.
 
+        Parameters
+        ----------
+        notation : ("physicist" | "chemist"), default="physicist"
+            Axis order convention.
+        transform : np.ndarray(K, K_cont)
+            Transformation matrix from the basis set in the given coordinate system (e.g. AO) to linear
+            combinations of contractions (e.g. MO).
+            Transformation is applied to the left, i.e. the sum is over the index 1 of `transform`
+            and index 0 of the array for contractions.
+            Default is no transformation.
+
         Returns
         -------
         out : np.ndarray(Nbasis, Nbasis, dtype=float)
             Integral array.
 
         """
-        return self._ovlp()
+        return self._ovlp(notation=notation, transform=transform)
 
-    def kinetic_energy(self):
+    def kinetic_energy_integral(self, notation="physicist", transform=None):
         r"""
         Compute the kinetic energy integrals.
 
+        Parameters
+        ----------
+        notation : ("physicist" | "chemist"), default="physicist"
+            Axis order convention.
+        transform : np.ndarray(K, K_cont)
+            Transformation matrix from the basis set in the given coordinate system (e.g. AO) to linear
+            combinations of contractions (e.g. MO).
+            Transformation is applied to the left, i.e. the sum is over the index 1 of `transform`
+            and index 0 of the array for contractions.
+            Default is no transformation.
+
         Returns
         -------
         out : np.ndarray(Nbasis, Nbasis, dtype=float)
             Integral array.
 
         """
-        return self._kin()
+        return self._kin(notation=notation, transform=transform)
 
-    def nuclear_attraction(self):
+    def nuclear_attraction_integral(self, notation="physicist", transform=None):
         r"""
         Compute the nuclear attraction integrals.
 
+        Parameters
+        ----------
+        notation : ("physicist" | "chemist"), default="physicist"
+            Axis order convention.
+        transform : np.ndarray(K, K_cont)
+            Transformation matrix from the basis set in the given coordinate system (e.g. AO) to linear
+            combinations of contractions (e.g. MO).
+            Transformation is applied to the left, i.e. the sum is over the index 1 of `transform`
+            and index 0 of the array for contractions.
+            Default is no transformation.
+
         Returns
         -------
         out : np.ndarray(Nbasis, Nbasis, dtype=float)
             Integral array.
 
         """
-        return self._nuc()
+        return self._nuc(notation=notation, transform=transform)
 
-    def electron_repulsion(self):
+    def electron_repulsion_integral(self, notation="physicist", transform=None):
         r"""
         Compute the electron repulsion integrals.
+
+        Parameters
+        ----------
+        notation : ("physicist" | "chemist"), default="physicist"
+            Axis order convention.
+        transform : np.ndarray(K, K_cont)
+            Transformation matrix from the basis set in the given coordinate system (e.g. AO) to linear
+            combinations of contractions (e.g. MO).
+            Transformation is applied to the left, i.e. the sum is over the index 1 of `transform`
+            and index 0 of the array for contractions.
+            Default is no transformation.
 
         Returns
         -------
@@ -1003,9 +1082,9 @@ class CBasis:
             Integral array.
 
         """
-        return self._eri()
+        return self._eri(notation=notation, transform=transform)
 
-    def r_inv(self, origin=None):
+    def r_inv_integral(self, origin=None, notation="physicist", transform=None):
         r"""
         Compute the :math:`1/\left|\mathbf{r} - \mathbf{R}_\text{inv}\right|` integrals.
 
@@ -1013,6 +1092,14 @@ class CBasis:
         ----------
         origin : np.ndarray(3, dtype=float), default=[0, 0, 0]
             Origin about which to evaluate integrals.
+        notation : ("physicist" | "chemist"), default="physicist"
+            Axis order convention.
+        transform : np.ndarray(K, K_cont)
+            Transformation matrix from the basis set in the given coordinate system (e.g. AO) to linear
+            combinations of contractions (e.g. MO).
+            Transformation is applied to the left, i.e. the sum is over the index 1 of `transform`
+            and index 0 of the array for contractions.
+            Default is no transformation.
 
         Returns
         -------
@@ -1020,9 +1107,9 @@ class CBasis:
             Integral array.
 
         """
-        return self._rinv(inv_origin=origin)
+        return self._rinv(inv_origin=origin, notation=notation, transform=transform)
 
-    def momentum(self, origin=None):
+    def momentum_integral(self, origin=None, notation="physicist", transform=None):
         r"""
         Compute the momentum integrals.
 
@@ -1030,6 +1117,14 @@ class CBasis:
         ----------
         origin : np.ndarray(3, dtype=float), default=[0, 0, 0]
             Origin about which to evaluate integrals.
+        notation : ("physicist" | "chemist"), default="physicist"
+            Axis order convention.
+        transform : np.ndarray(K, K_cont)
+            Transformation matrix from the basis set in the given coordinate system (e.g. AO) to linear
+            combinations of contractions (e.g. MO).
+            Transformation is applied to the left, i.e. the sum is over the index 1 of `transform`
+            and index 0 of the array for contractions.
+            Default is no transformation.
 
         Returns
         -------
@@ -1037,9 +1132,9 @@ class CBasis:
             Integral array.
 
         """
-        return self._mom(origin=origin)
+        return self._mom(origin=origin, notation=notation, transform=transform)
 
-    def angular_momentum(self, origin=None):
+    def angular_momentum_integral(self, origin=None, notation="physicist", transform=None):
         r"""
         Compute the angular momentum integrals.
 
@@ -1047,6 +1142,14 @@ class CBasis:
         ----------
         origin : np.ndarray(3, dtype=float), default=[0, 0, 0]
             Origin about which to evaluate integrals.
+        notation : ("physicist" | "chemist"), default="physicist"
+            Axis order convention.
+        transform : np.ndarray(K, K_cont)
+            Transformation matrix from the basis set in the given coordinate system (e.g. AO) to linear
+            combinations of contractions (e.g. MO).
+            Transformation is applied to the left, i.e. the sum is over the index 1 of `transform`
+            and index 0 of the array for contractions.
+            Default is no transformation.
 
         Returns
         -------
@@ -1055,9 +1158,11 @@ class CBasis:
 
         """
         raise NotImplementedError("Angular momentum integral doesn't work; see Issue #149")
-        # return self._amom(origin=origin)
+        # return self._amom(origin=origin, notation=notation, transform=transform)
 
-    def point_charge(self, point_coords, point_charges):
+    def point_charge_integral(
+        self, point_coords, point_charges, notation="physicist", transform=None
+    ):
         r"""
         Compute the point charge integrals.
 
@@ -1067,6 +1172,14 @@ class CBasis:
             Coordinates of point charges.
         point_charges : np.ndarray(N, dtype=float)
             Charges of point charges.
+        notation : ("physicist" | "chemist"), default="physicist"
+            Axis order convention.
+        transform : np.ndarray(K, K_cont)
+            Transformation matrix from the basis set in the given coordinate system (e.g. AO) to linear
+            combinations of contractions (e.g. MO).
+            Transformation is applied to the left, i.e. the sum is over the index 1 of `transform`
+            and index 0 of the array for contractions.
+            Default is no transformation.
 
         Returns
         -------
@@ -1078,13 +1191,13 @@ class CBasis:
         out = np.zeros((self.nbfn, self.nbfn, len(point_charges)), dtype=c_double, order="F")
         # Compute 1/|r - r_{inv}| for each charge
         for icharge, (coord, charge) in enumerate(zip(point_coords, point_charges)):
-            val = self._rinv(inv_origin=coord)
+            val = self._rinv(inv_origin=coord, notation=notation, transform=transform)
             val *= -charge
             out[:, :, icharge] = val
         # Return integrals in `out` array
         return out
 
-    def moment(self, orders, origin=None):
+    def moment_integral(self, orders, origin=None, notation="physicist", transform=None):
         r"""
         Compute the moment integrals.
 
@@ -1094,6 +1207,14 @@ class CBasis:
             Moment orders :math:`\left[x, y, z\right\]` to evaluate.
         origin : np.ndarray(3, dtype=float), default=[0, 0, 0]
             Origin about which to evaluate integrals.
+        notation : ("physicist" | "chemist"), default="physicist"
+            Axis order convention.
+        transform : np.ndarray(K, K_cont)
+            Transformation matrix from the basis set in the given coordinate system (e.g. AO) to linear
+            combinations of contractions (e.g. MO).
+            Transformation is applied to the left, i.e. the sum is over the index 1 of `transform`
+            and index 0 of the array for contractions.
+            Default is no transformation.
 
         Returns
         -------
@@ -1113,9 +1234,11 @@ class CBasis:
         try:
             for i, order in enumerate(orders):
                 if sum(order) == 0:
-                    out[:, :, i] = self._ovlp()
+                    out[:, :, i] = self._ovlp(notation=notation, transform=transform)
                 else:
-                    out[:, :, i] = self._moments[tuple(order)](origin=origin)
+                    out[:, :, i] = self._moments[tuple(order)](
+                        origin=origin, notation=notation, transform=transform
+                    )
         except KeyError:
             raise ValueError(
                 "Invalid order; can use up to order 4 for any XYZ component,"
